@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced PDF Editor & Whiteout Tool</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body, html {
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        main {
+            flex: 1;
+            overflow: auto;
+            position: relative;
+            background: #e2e8f0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px;
+            gap: 40px;
+        }
+        .page-container {
+            position: relative;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            background: white;
+            flex-shrink: 0;
+        }
+        .page-container img {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        .editor-box {
+            position: absolute;
+            border: 2px dashed #3b82f6;
+            background: rgba(255, 255, 255, 0.95);
+            z-index: 20;
+            padding: 2px;
+            min-width: 120px;
+            min-height: 30px;
+            display: flex;
+            align-items: center;
+        }
+        .editor-box.active-selected {
+            border: 2px solid #2563eb;
+            box-shadow: 0 0 8px rgba(37, 99, 235, 0.4);
+        }
+        .editor-box.locked {
+            border: 1px solid transparent;
+            background: transparent;
+            pointer-events: none;
+        }
+        .editor-box.locked .box-controls {
+            pointer-events: auto;
+        }
+        .rect-box {
+            position: absolute;
+            border: 1px solid #94a3b8;
+            z-index: 10;
+        }
+        .rect-box.locked {
+            border: none;
+            pointer-events: none;
+        }
+        .rect-box.locked .box-controls {
+            pointer-events: auto;
+        }
+        .box-controls {
+            position: absolute;
+            top: -26px;
+            left: 0;
+            display: flex;
+            gap: 4px;
+            background: #1e293b;
+            padding: 2px 5px;
+            border-radius: 4px;
+            z-index: 999;
+            white-space: nowrap;
+        }
+        .box-controls button {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 11px;
+            cursor: pointer;
+            padding: 2px 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .box-controls button:hover {
+            color: #38bdf8;
+        }
+        .resize-handle {
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            background: #3b82f6;
+            z-index: 30;
+        }
+        .handle-se { bottom: -4px; right: -4px; cursor: se-resize; }
+        .handle-sw { bottom: -4px; left: -4px; cursor: sw-resize; }
+        .handle-ne { top: -4px; right: -4px; cursor: ne-resize; }
+        .handle-nw { top: -4px; left: -4px; cursor: nw-resize; }
+
+        .locked .drag-handle,
+        .locked .resize-handle,
+        .locked .del-btn {
+            display: none !important;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex flex-col">
+
+    <!-- Header -->
+    <header class="bg-white shadow-sm px-6 py-3 flex justify-between items-center z-50">
+        <h1 class="text-xl font-bold text-gray-800"><i class="fa-solid fa-file-pdf text-red-500 mr-2"></i> PDF Editor & Whiteout Tool</h1>
+        <div>
+            <input type="file" id="pdfUpload" accept="application/pdf" class="hidden">
+            <label for="pdfUpload" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded cursor-pointer font-medium text-sm transition">
+                <i class="fa-solid fa-upload mr-1"></i> Upload PDF
+            </label>
+            <button id="saveBtn" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded font-medium text-sm transition ml-2 hidden">
+                <i class="fa-solid fa-download mr-1"></i> Save & Download
+            </button>
+        </div>
+    </header>
+
+    <!-- Toolbar -->
+    <div id="toolbar" class="bg-gray-200 border-b border-gray-300 px-6 py-2 flex flex-wrap items-center gap-4 shadow-inner z-50 hidden">
+        
+        <div class="flex items-center space-x-1 bg-white p-1 rounded border">
+            <button id="modeSelect" onclick="setMode('select')" class="px-3 py-1 text-sm rounded bg-gray-200 font-medium">Select / Move</button>
+            <button id="modeText" onclick="setMode('text')" class="px-3 py-1 text-sm rounded font-medium text-blue-600"><i class="fa-solid fa-font mr-1"></i> Add Text</button>
+            <button id="modeRect" onclick="setMode('rect')" class="px-3 py-1 text-sm rounded font-medium text-gray-700"><i class="fa-solid fa-square mr-1"></i> Solid Rect</button>
+        </div>
+
+        <div class="h-5 w-px bg-gray-400"></div>
+
+        <!-- Font Size Options -->
+        <div class="flex items-center space-x-1">
+            <label class="text-xs text-gray-600">Size:</label>
+            <select id="fontSize" onchange="updateActiveTextStyle('fontSize', this.value + 'px')" class="border rounded px-2 py-1 text-sm bg-white">
+                <option value="10">10</option>
+                <option value="12" selected>12</option>
+                <option value="14">14</option>
+                <option value="16">16</option>
+                <option value="18">18</option>
+                <option value="20">20</option>
+                <option value="24">24</option>
+                <option value="28">28</option>
+                <option value="32">32</option>
+            </select>
+        </div>
+
+        <div class="h-5 w-px bg-gray-400"></div>
+
+        <div class="flex items-center space-x-1">
+            <button id="boldBtn" onclick="toggleStyle('bold')" class="p-2 hover:bg-gray-300 rounded text-gray-700 font-bold" title="Bold"><i class="fa-solid fa-bold"></i></button>
+            <button id="italicBtn" onclick="toggleStyle('italic')" class="p-2 hover:bg-gray-300 rounded text-gray-700 italic" title="Italic"><i class="fa-solid fa-italic"></i></button>
+            <button id="underlineBtn" onclick="toggleStyle('underline')" class="p-2 hover:bg-gray-300 rounded text-gray-700 underline" title="Underline"><i class="fa-solid fa-underline"></i></button>
+        </div>
+
+        <div class="flex items-center space-x-1 border-l pl-2">
+            <button onclick="setAlign('left')" class="p-2 hover:bg-gray-300 rounded text-gray-700" title="Align Left"><i class="fa-solid fa-align-left"></i></button>
+            <button onclick="setAlign('center')" class="p-2 hover:bg-gray-300 rounded text-gray-700" title="Align Center"><i class="fa-solid fa-align-center"></i></button>
+            <button onclick="setAlign('right')" class="p-2 hover:bg-gray-300 rounded text-gray-700" title="Align Right"><i class="fa-solid fa-align-right"></i></button>
+            <button onclick="setAlign('justify')" class="p-2 hover:bg-gray-300 rounded text-gray-700" title="Justify"><i class="fa-solid fa-align-justify"></i></button>
+        </div>
+
+        <div class="h-5 w-px bg-gray-400"></div>
+
+        <div class="flex items-center space-x-2">
+            <label class="text-xs text-gray-600">Text Color:</label>
+            <input type="color" id="fontColor" onchange="updateActiveTextStyle('color', this.value)" value="#000000" class="w-7 h-7 border rounded cursor-pointer p-0">
+        </div>
+
+        <div class="flex items-center space-x-2">
+            <label class="text-xs text-gray-600">Rect Color:</label>
+            <input type="color" id="rectColor" onchange="updateActiveRectColor(this.value)" value="#ffffff" class="w-7 h-7 border rounded cursor-pointer p-0" title="Solid color to hide text">
+        </div>
+
+    </div>
+
+    <!-- Workspace containing multiple pages -->
+    <main id="workspace">
+        <div id="welcomeMessage" class="text-center text-gray-500 my-auto">
+            <i class="fa-regular fa-file-image text-6xl mb-3"></i>
+            <p class="text-lg">Please upload a PDF file to start editing.</p>
+        </div>
+    </main>
+
+    <script>
+        let currentFilename = '';
+        let serverZoomFactor = 2.0;
+        let currentMode = 'select'; 
+        let currentTextAlign = 'left';
+        let activeBox = null;
+        let zIndexCounter = 100;
+
+        function setMode(mode) {
+            currentMode = mode;
+            ['select', 'text', 'rect'].forEach(m => {
+                const btn = document.getElementById(`mode${m.charAt(0).toUpperCase() + m.slice(1)}`);
+                if(m === mode) {
+                    btn.classList.add('bg-blue-600', 'text-white');
+                    btn.classList.remove('bg-gray-200', 'text-gray-700');
+                } else {
+                    btn.classList.remove('bg-blue-600', 'text-white');
+                    btn.classList.add('bg-gray-200', 'text-gray-700');
+                }
+            });
+        }
+
+        function bringToFront(box) {
+            document.querySelectorAll('.editor-box').forEach(b => b.classList.remove('active-selected'));
+            zIndexCounter++;
+            box.style.zIndex = zIndexCounter;
+            activeBox = box;
+            box.classList.add('active-selected');
+        }
+
+        document.getElementById('pdfUpload').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('pdf', file);
+
+            const response = await fetch('/upload', { method: 'POST', body: formData });
+            const data = await response.json();
+
+            if (data.success) {
+                currentFilename = data.filename;
+                serverZoomFactor = data.zoomFactor || 2.0;
+                document.getElementById('welcomeMessage').classList.add('hidden');
+                document.getElementById('toolbar').classList.remove('hidden');
+                document.getElementById('saveBtn').classList.remove('hidden');
+                
+                const workspace = document.getElementById('workspace');
+                workspace.innerHTML = '';
+
+                data.pages.forEach(pageInfo => {
+                    const pageDiv = document.createElement('div');
+                    pageDiv.className = 'page-container';
+                    
+                    // Display size scaled down by zoom factor for crisp viewing
+                    const displayWidth = pageInfo.origWidth / serverZoomFactor;
+                    const displayHeight = pageInfo.origHeight / serverZoomFactor;
+                    
+                    pageDiv.style.width = `${displayWidth}px`;
+                    pageDiv.style.height = `${displayHeight}px`;
+                    pageDiv.dataset.pageIndex = pageInfo.pageIndex;
+                    pageDiv.dataset.scale = serverZoomFactor; // Store scale ratio
+                    
+                    pageDiv.innerHTML = `<img src="${pageInfo.imageUrl}" class="absolute inset-0 w-full h-full object-contain pointer-events-none">`;
+
+                    pageDiv.addEventListener('click', (ev) => {
+                        if (currentMode === 'select') return;
+                        if (ev.target.closest('.editor-box') || ev.target.closest('.rect-box')) return;
+
+                        const rect = pageDiv.getBoundingClientRect();
+                        const x = ev.clientX - rect.left;
+                        const y = ev.clientY - rect.top;
+
+                        if (currentMode === 'text') {
+                            createTextElement(pageDiv, x, y);
+                            setMode('select'); 
+                        } else if (currentMode === 'rect') {
+                            createRectElement(pageDiv, x, y);
+                            setMode('select'); 
+                        }
+                    });
+
+                    workspace.appendChild(pageDiv);
+                });
+
+                setMode('select');
+            }
+        });
+
+        function makeInteractive(container, dragHandle) {
+            let isDragging = false;
+            let currentResizer = null;
+            let startX, startY, initialX, initialY, initialW, initialH, initialTop, initialLeft;
+
+            container.addEventListener('mousedown', () => bringToFront(container));
+
+            dragHandle.addEventListener('mousedown', (e) => {
+                if (container.classList.contains('locked')) return;
+                isDragging = true;
+                startX = e.clientX;
+                startY = e.clientY;
+                initialX = container.offsetLeft;
+                initialY = container.offsetTop;
+                e.stopPropagation();
+            });
+
+            container.querySelectorAll('.resize-handle').forEach(resizer => {
+                resizer.addEventListener('mousedown', (e) => {
+                    if (container.classList.contains('locked')) return;
+                    currentResizer = resizer.classList;
+                    startX = e.clientX;
+                    startY = e.clientY;
+                    initialW = container.offsetWidth;
+                    initialH = container.offsetHeight;
+                    initialTop = container.offsetTop;
+                    initialLeft = container.offsetLeft;
+                    e.stopPropagation();
+                });
+            });
+
+            window.addEventListener('mousemove', (e) => {
+                if (isDragging) {
+                    const dx = e.clientX - startX;
+                    const dy = e.clientY - startY;
+                    container.style.left = `${initialX + dx}px`;
+                    container.style.top = `${initialY + dy}px`;
+                } else if (currentResizer) {
+                    const dx = e.clientX - startX;
+                    const dy = e.clientY - startY;
+
+                    let newW = initialW, newH = initialH;
+                    if (currentResizer.contains('handle-se')) {
+                        newW = Math.max(60, initialW + dx);
+                        newH = Math.max(20, initialH + dy);
+                        container.style.width = `${newW}px`;
+                        container.style.height = `${newH}px`;
+                    } else if (currentResizer.contains('handle-sw')) {
+                        newW = Math.max(60, initialW - dx);
+                        newH = Math.max(20, initialH + dy);
+                        container.style.width = `${newW}px`;
+                        container.style.height = `${newH}px`;
+                        if (newW > 60) container.style.left = `${initialLeft + dx}px`;
+                    } else if (currentResizer.contains('handle-ne')) {
+                        newW = Math.max(60, initialW + dx);
+                        newH = Math.max(20, initialH - dy);
+                        container.style.width = `${newW}px`;
+                        container.style.height = `${newH}px`;
+                        if (newH > 20) container.style.top = `${initialTop + dy}px`;
+                    } else if (currentResizer.contains('handle-nw')) {
+                        newW = Math.max(60, initialW - dx);
+                        newH = Math.max(20, initialH - dy);
+                        container.style.width = `${newW}px`;
+                        container.style.height = `${newH}px`;
+                        if (newW > 60) container.style.left = `${initialLeft + dx}px`;
+                        if (newH > 20) container.style.top = `${initialTop + dy}px`;
+                    }
+                }
+            });
+
+            window.addEventListener('mouseup', () => {
+                isDragging = false;
+                currentResizer = null;
+            });
+        }
+
+        function createTextElement(pageDiv, x, y) {
+            const fontSize = document.getElementById('fontSize').value + 'px';
+            const color = document.getElementById('fontColor').value;
+
+            const container = document.createElement('div');
+            container.className = 'editor-box';
+            container.style.left = `${x}px`;
+            container.style.top = `${y}px`;
+            container.style.width = '180px';
+            container.style.height = '35px';
+            bringToFront(container);
+
+            const controls = document.createElement('div');
+            controls.className = 'box-controls';
+            
+            const dragBtn = document.createElement('button');
+            dragBtn.className = 'drag-handle';
+            dragBtn.innerHTML = '<i class="fa-solid fa-arrows-up-down-left-right"></i>';
+            dragBtn.title = "Drag Box";
+            
+            const lockBtn = document.createElement('button');
+            lockBtn.innerHTML = '<i class="fa-solid fa-lock-open"></i>';
+            lockBtn.title = "Lock / Unlock";
+            lockBtn.onclick = (e) => {
+                e.stopPropagation();
+                container.classList.toggle('locked');
+                const editable = container.querySelector('[contenteditable]');
+                const isLocked = container.classList.contains('locked');
+                if (editable) editable.contentEditable = !isLocked;
+                lockBtn.innerHTML = isLocked ? '<i class="fa-solid fa-lock text-yellow-400"></i>' : '<i class="fa-solid fa-lock-open"></i>';
+            };
+
+            const delBtn = document.createElement('button');
+            delBtn.className = 'del-btn';
+            delBtn.innerHTML = '<i class="fa-solid fa-xmark"></i>';
+            delBtn.title = "Delete";
+            delBtn.onclick = (e) => {
+                e.stopPropagation();
+                container.remove();
+            };
+
+            controls.appendChild(dragBtn);
+            controls.appendChild(lockBtn);
+            controls.appendChild(delBtn);
+            container.appendChild(controls);
+
+            const editableDiv = document.createElement('div');
+            editableDiv.contentEditable = true;
+            editableDiv.innerText = 'Type here...';
+            editableDiv.className = 'w-full h-full outline-none bg-transparent flex items-center';
+            editableDiv.style.fontSize = fontSize;
+            editableDiv.style.color = color;
+            editableDiv.style.lineHeight = '1.2';
+            editableDiv.style.fontFamily = 'serif';
+            editableDiv.style.textAlign = currentTextAlign;
+
+            editableDiv.onfocus = () => {
+                bringToFront(container);
+                if(editableDiv.innerText === 'Type here...') editableDiv.innerText = '';
+            };
+            container.appendChild(editableDiv);
+
+            ['se', 'sw', 'ne', 'nw'].forEach(pos => {
+                const resizer = document.createElement('div');
+                resizer.className = `resize-handle handle-${pos}`;
+                container.appendChild(resizer);
+            });
+
+            pageDiv.appendChild(container);
+            makeInteractive(container, dragBtn);
+            editableDiv.focus();
+        }
+
+        function createRectElement(pageDiv, x, y) {
+            const rectColor = document.getElementById('rectColor').value;
+
+            const container = document.createElement('div');
+            container.className = 'rect-box';
+            container.style.left = `${x}px`;
+            container.style.top = `${y}px`;
+            container.style.width = '120px';
+            container.style.height = '35px';
+            container.style.backgroundColor = rectColor;
+            bringToFront(container);
+
+            const controls = document.createElement('div');
+            controls.className = 'box-controls';
+            
+            const dragBtn = document.createElement('button');
+            dragBtn.className = 'drag-handle';
+            dragBtn.innerHTML = '<i class="fa-solid fa-arrows-up-down-left-right"></i>';
+            dragBtn.title = "Drag Box";
+            
+            const lockBtn = document.createElement('button');
+            lockBtn.innerHTML = '<i class="fa-solid fa-lock-open"></i>';
+            lockBtn.title = "Lock / Unlock";
+            lockBtn.onclick = (e) => {
+                e.stopPropagation();
+                container.classList.toggle('locked');
+                lockBtn.innerHTML = container.classList.contains('locked') ? '<i class="fa-solid fa-lock text-yellow-400"></i>' : '<i class="fa-solid fa-lock-open"></i>';
+            };
+
+            const delBtn = document.createElement('button');
+            delBtn.className = 'del-btn';
+            delBtn.innerHTML = '<i class="fa-solid fa-xmark"></i>';
+            delBtn.title = "Delete";
+            delBtn.onclick = (e) => {
+                e.stopPropagation();
+                container.remove();
+            };
+
+            controls.appendChild(dragBtn);
+            controls.appendChild(lockBtn);
+            controls.appendChild(delBtn);
+            container.appendChild(controls);
+
+            ['se', 'sw', 'ne', 'nw'].forEach(pos => {
+                const resizer = document.createElement('div');
+                resizer.className = `resize-handle handle-${pos}`;
+                container.appendChild(resizer);
+            });
+
+            pageDiv.appendChild(container);
+            makeInteractive(container, dragBtn);
+        }
+
+        function updateActiveTextStyle(property, value) {
+            if (!activeBox) return;
+            const editable = activeBox.querySelector('[contenteditable]');
+            if (editable) {
+                if (property === 'fontSize') {
+                    editable.style.fontSize = value;
+                } else if (property === 'color') {
+                    editable.style.color = value;
+                }
+            }
+        }
+
+        function toggleStyle(styleType) {
+            const btn = document.getElementById(`${styleType}Btn`);
+            btn.classList.toggle('bg-gray-300');
+            const isActive = btn.classList.contains('bg-gray-300');
+
+            if (!activeBox) return;
+            const editable = activeBox.querySelector('[contenteditable]');
+            if (editable) {
+                if (styleType === 'bold') editable.style.fontWeight = isActive ? 'bold' : 'normal';
+                if (styleType === 'italic') editable.style.fontStyle = isActive ? 'italic' : 'normal';
+                if (styleType === 'underline') editable.style.textDecoration = isActive ? 'underline' : 'none';
+            }
+        }
+
+        function setAlign(align) {
+            currentTextAlign = align;
+            if (!activeBox) return;
+            const editable = activeBox.querySelector('[contenteditable]');
+            if (editable) editable.style.textAlign = align;
+        }
+
+        function updateActiveRectColor(color) {
+            if (activeBox && activeBox.classList.contains('rect-box')) {
+                activeBox.style.backgroundColor = color;
+            }
+        }
+
+        document.getElementById('saveBtn').addEventListener('click', async () => {
+            const pagesData = [];
+            const scale = serverZoomFactor; // Scale coordinates back to original high-res image pixels
+
+            document.querySelectorAll('.page-container').forEach(pageDiv => {
+                const pageIndex = parseInt(pageDiv.dataset.pageIndex);
+                const pageRect = pageDiv.getBoundingClientRect();
+                const elements = [];
+                const rectangles = [];
+
+                pageDiv.querySelectorAll('.editor-box').forEach(box => {
+                    const editable = box.querySelector('[contenteditable]');
+                    const boxRect = box.getBoundingClientRect();
+                    if (editable && editable.innerText.trim() !== '' && editable.innerText !== 'Type here...') {
+                        elements.push({
+                            text: editable.innerText,
+                            x: (boxRect.left - pageRect.left) * scale,
+                            y: (boxRect.top - pageRect.top) * scale,
+                            fontSize: parseFloat(editable.style.fontSize) || 12,
+                            color: rgbToHex(editable.style.color) || '#000000'
+                        });
+                    }
+                });
+
+                pageDiv.querySelectorAll('.rect-box').forEach(box => {
+                    const boxRect = box.getBoundingClientRect();
+                    rectangles.push({
+                        x: (boxRect.left - pageRect.left) * scale,
+                        y: (boxRect.top - pageRect.top) * scale,
+                        width: boxRect.width * scale,
+                        height: boxRect.height * scale,
+                        color: rgbToHex(box.style.backgroundColor) || '#ffffff'
+                    });
+                });
+
+                pagesData.push({
+                    pageIndex: pageIndex,
+                    elements: elements,
+                    rectangles: rectangles
+                });
+            });
+
+            const response = await fetch('/save_pdf', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    filename: currentFilename,
+                    pages: pagesData,
+                    zoomFactor: serverZoomFactor
+                })
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                window.location.href = data.download_url;
+            } else {
+                alert('Error saving PDF!');
+            }
+        });
+
+        function rgbToHex(rgb) {
+            if (!rgb) return '#ffffff';
+            if (rgb.startsWith('#')) return rgb;
+            const match = rgb.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
+            if (!match) return '#ffffff';
+            return "#" + ((1 << 24) + (parseInt(match[1]) << 16) + (parseInt(match[2]) << 8) + parseInt(match[3])).toString(16).slice(1);
+        }
+    </script>
+</body>
+</html>
